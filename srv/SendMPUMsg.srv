@@ -1,0 +1,6 @@
+# Send MPU Message
+autopilot_driver/Mpu mpu_msg
+
+---
+# Response
+bool success
