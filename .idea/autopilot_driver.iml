@@ -5,13 +5,15 @@
     <content url="file:///opt/ros/humble">
       <sourceFolder url="file:///opt/ros/humble/include" isTestSource="false" />
       <sourceFolder url="file:///opt/ros/humble/lib" isTestSource="false" />
-      <sourceFolder url="file:///opt/ros/humble/lib/python3.10/site-packages" isTestSource="false" />
       <sourceFolder url="file:///opt/ros/humble/local" isTestSource="false" />
-      <sourceFolder url="file:///opt/ros/humble/local/lib/python3.10/dist-packages" isTestSource="false" />
       <sourceFolder url="file:///opt/ros/humble/src" isTestSource="false" />
+      <sourceFolder url="file:///opt/ros/humble/lib/python3.10/site-packages" isTestSource="false" />
+      <sourceFolder url="file:///opt/ros/humble/local/lib/python3.10/dist-packages" isTestSource="false" />
     </content>
     <orderEntry type="jdk" jdkName="$USER_HOME$/anaconda3" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
+    <orderEntry type="library" name="workspace" level="project" />
+    <orderEntry type="library" name="ROS" level="project" />
   </component>
   <component name="TestRunnerService">
     <option name="PROJECT_TEST_RUNNER" value="py.test" />
