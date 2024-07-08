@@ -22,6 +22,7 @@ from autopilot_msgs.srv import SendGPS, SendMPUMsg
 class Autopilot(Node):
     def __init__(self):
         super().__init__('Autopilot_Base')
+        self.is_rebooted = False
         self.attitude_msg = None
         self.imu_msg = None
         self.vfrHdu_msg = None
@@ -85,8 +86,32 @@ class Autopilot(Node):
             #         att_freq = self.mav_parm.mavset(self.serial_connection, "sr0_", 50)
             # except Exception as e:
             #     self._logger.error('Error in setting frequency: {}'.format(e))
+        try:
+            assert not self.is_rebooted, "Autopilot Initialization is Done!"
+            self._logger.info("Rebooting the Autopilot. Please wait ...!")
+            time.sleep(3)
+            self.serial_connection.reboot_autopilot()
+            time.sleep(3)
+            self._logger.info("Reconnecting to the Autopilot")
+            self.is_rebooted = True
+            self.initialize_connection()
+        except Exception as e:
+            msg = str(e)
+            try:
+                self._logger.info("Disarming the Autopilot. Please wait ...!")
+                time.sleep(5)
+                self.serial_connection.arducopter_disarm()
+                self._logger.info("Set the Autopilot Mode to Guided")
+                self.serial_connection.set_mode(15)
+                self._logger.info("Arming the Autopilot")
+                self.serial_connection.arducopter_arm()
+            except Exception as e:
+                self._logger.error('Error in setting mode and arming the APU: {}'.format(e))
+                self._logger.info("Reconnecting to Autopilot")
+                self.initialize_connection()
+            self._logger.info(msg)
 
-        self._logger.info(f'Connection is stablished to port: <{serial_path}>')
+        self._logger.info(f'Connection is established to port: <{serial_path}>')
 
     def receiver_callback(self):
         try:
