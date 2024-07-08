@@ -1,26 +1,12 @@
 pytest>=7.4.4
 setuptools>=58.2.0
-pymavlink>=2.4.41
 numpy>=1.26.4
 lxml>=5.2.1
 pathlib>=1.0.1
-cryptography>=42.0.5
-lark>=1.1.9
 yaml>=0.2.5
 pyyaml>=6.0.1
 packaging>=23.2
 empy>=3.3.4
-matplotlib>=3.8.4
-psutil>=5.9.0
 flake8>=4.0.1
-pydocstyle>=6.3.0
-decorator>=5.1.1
-spyder>=5.2.2
-pillow>=10.3.0
 transforms3d>=0.4.2
-tornado>=6.3.3
-click>=8.1.7
-param>=2.1.0
-dbus>=1.13.18
-ujson>=5.10.0
-pydantic>=2.5.3
+# pymavlink should be installed from github-repository (mohamad-javad)
