@@ -39,7 +39,7 @@ class Autopilot(Node):
             SendMPUMsg, '/autopilot/mpu_srv', self.mpu_msg_responder)
         self.mode_service_ = self.create_service(
             SetMode, '/autopilot/set_mode', self.set_mode_responder)
-        )
+
 
         self.mav_parm = mavparm.MAVParmDict()
         self.initialize_connection()
@@ -64,6 +64,7 @@ class Autopilot(Node):
                 self._logger.info(f"Connecting to Autopilot in port {serial_path}")
                 self.serial_connection = mavu.mavlink_connection(serial_path, baud=921600)
                 self.serial_connection.wait_heartbeat()
+                self.serial_connection.arducopter_disarm()
                 break
             except Exception as e:
                 self._logger.error('Error in connection: {}'.format(e))
@@ -91,8 +92,7 @@ class Autopilot(Node):
             #         att_freq = self.mav_parm.mavset(self.serial_connection, "sr0_", 50)
             # except Exception as e:
             #     self._logger.error('Error in setting frequency: {}'.format(e))
-        if not self.is_rebooted:
-            self.reboot_and_arm()
+        self.reboot_and_arm()
 
         self._logger.info(f'Connection is established to port: <{serial_path}>')
 
