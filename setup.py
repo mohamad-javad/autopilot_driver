@@ -25,7 +25,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'apu_node = autopilot_driver.apu_node:main'
+            'apu_node = autopilot_driver.apu_node:main',
+            'apu_sensory = autopilot_driver.apu_sensory:main'
         ],
     },
 )
