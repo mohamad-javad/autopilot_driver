@@ -2,6 +2,7 @@ import time
 import os
 
 import serial.serialutil
+import binascii
 
 import rclpy
 from rclpy.node import Node
@@ -12,9 +13,7 @@ from geometry_msgs.msg import Quaternion, Twist
 from mavros_msgs.msg import GimbalDeviceAttitudeStatus, GPSRAW, GPSINPUT, VfrHud
 from mavros_msgs.srv import CommandLong
 from pymavlink import mavutil as mavu, mavparm
-from pymavlink.dialects.v20.smrc import MAVLink_ipc_data_message as MPU_Message
-from pymavlink.dialects.v20.smrc import *
-
+from pymavlink.dialects.v20.ardupilotmega import MAVLink_ipc_data_message as MPU_Message
 from autopilot_msgs.msg import Mpu
 from autopilot_msgs.srv import SendGPS, SendMPUMsg, SetMode
 
@@ -26,6 +25,7 @@ class Autopilot(Node):
         self.mode = 15
         self.is_rebooted = False
         self.attitude_msg = None
+        self.last_sent = 0
         self.imu_msg = None
         self.vfrHdu_msg = None
         self.imu_publisher_ = self.create_publisher(Imu, '/autopilot/imu', 10)
@@ -40,9 +40,11 @@ class Autopilot(Node):
         self.mode_service_ = self.create_service(
             SetMode, '/autopilot/set_mode', self.set_mode_responder)
 
-
+        # set rates
         self.mav_parm = mavparm.MAVParmDict()
+
         self.initialize_connection()
+        # create timers
         self.receiver_timer = self.create_timer(0.001, self.receiver_callback)
         self.vfrHud_pub_timer = self.create_timer(1/50, self.vfrHud_pub_callback)
         self.imu_pub_timer = self.create_timer(1/50, self.imu_pub_callback)
@@ -145,9 +147,8 @@ class Autopilot(Node):
             if self.is_gps_msg:
                 self.serial_connection.mav.send(self.gps_msg)
                 self.is_gps_msg = False
-            if self.is_mpu_msg:
-                self.serial_connection.mav.send(self.mpu_msg)
-                self.is_mpu_msg = False
+            if self.mpu_msg is not None and time.time() - self.last_sent > 0.01:
+                self.serial_connection.write(self.mpu_msg)
         except serial.serialutil.SerialException as e:
             self._logger.error(f"Error in sending message: {e}")
         except Exception as e:
@@ -246,21 +247,24 @@ class Autopilot(Node):
     def mpu_msg_responder(self, req: SendMPUMsg.Request, res: SendMPUMsg.Response):
         try:
             m_msg = req.mpu_msg
-            self.mpu_msg = MPU_Message(
+            mpu_msg = MPU_Message(
                 preamble=m_msg.preamble,
                 mode=m_msg.mode,
-                references=[m_msg.sta_ref, m_msg.str_ref, m_msg.yaw_ref, m_msg.yaw_rate_ref, m_msg.swa,
+                refrences=[m_msg.sta_ref, m_msg.str_ref, m_msg.yaw_ref, m_msg.yaw_rate_ref, m_msg.swa,
                             m_msg.swar, m_msg.reserved0, m_msg.reserved1, m_msg.reserved2, m_msg.reserved3,
                             m_msg.speed_ref, m_msg.acc_ref, m_msg.jerk_ref, m_msg.gpa_ref, m_msg.ebrake_ref,
                             m_msg.hbrake_ref, m_msg.reserved4,
                             m_msg.reserved5, m_msg.reserved6, m_msg.gear],
-                mode_fb=m_msg.mode_fb,
-                switch_fb=m_msg.switch_fb,
-                steer_fb=m_msg.steer_fb,
-                acc_fb=m_msg.acc_fb,
-                ebrake_fb=m_msg.ebrake_fb,
-                hbrake_fb=m_msg.hbrake_fb
+                oauMode=m_msg.mode_fb,
+                oauSwitches=m_msg.switch_fb,
+                oauSteering=m_msg.steer_fb,
+                oauAcc=m_msg.acc_fb,
+                oauEBrake=m_msg.ebrake_fb,
+                oauHBrake=m_msg.hbrake_fb
             )
+
+            self.mpu_msg = mpu_msg.pack(self.serial_connection.mav)
+            self._logger.info(f"Sending: {binascii.hexlify(self.mpu_msg)}")
         except Exception as e:
             self._logger.error('Error in creating MPU message: {}'.format(e))
             res.success = False
@@ -272,12 +276,12 @@ class Autopilot(Node):
 
     def set_mode_responder(self, msg:SetMode.Request, res: SetMode.Response):
         mode: str= msg.mode.upper()
-        modes = {"GUIDED": 15, "MANUAL": 10}
+        modes = {"GUIDED": 15, "AUTO": 10, "MANUAL": 0, "RTL": 11, "STEERING": 3, "HOLD": 4}
         self.mode = modes.get(mode) or 15
         if mode in modes.keys():
             self._logger.warn(f"Setting mode to <{mode}>")
             self.mode_name = mode
-            res.success= True
+            res.success = True
             self.reboot_and_arm()
 
         else:
