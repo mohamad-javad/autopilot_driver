@@ -21,6 +21,7 @@ from autopilot_msgs.srv import SendGPS, SendMPUMsg, SetMode
 class Autopilot(Node):
     def __init__(self):
         super().__init__('Autopilot_Base')
+        self.is_armed = None
         self.request = None
         self.mode_name = "GUIDED"
         self.mode = 15
@@ -66,18 +67,18 @@ class Autopilot(Node):
                         break
                 self._logger.info(f"Connecting to Autopilot in port {serial_path}")
                 self.serial_connection = mavu.mavlink_connection(serial_path, baud=921600)
-                self.serial_connection.wait_heartbeat()
-                self.serial_connection.arducopter_disarm()
+                if self.check_arm():
+                    self.is_rebooted = True
                 break
             except Exception as e:
                 self._logger.error('Error in connection: {}'.format(e))
-                time.sleep(1)
+                time.sleep(.5)
         try:
             self._logger.info("Setting Attitude Frequency to 50")
             assert self.mav_parm.mavset(
                self.serial_connection, "sr0_extra1", 50, retries=5
             ), "Cant Set Attitude Frequency"
-            self._logger.info("==> Done!")
+            self._logger.info("Set Attitude Frequency ==> Done!")
         except Exception as e:
             self._logger.error('Error in setting frequency: {}'.format(e))
         try:
@@ -85,7 +86,7 @@ class Autopilot(Node):
             assert self.mav_parm.mavset(
                    self.serial_connection, "sr0_raw_sens", 50, retries=5
             ), "Cant Set Attitude Frequency"
-            self._logger.info("==> Done!")
+            self._logger.info("Set Raw_IMU Frequency ==> Done!")
         except Exception as e:
             self._logger.error('Error in setting frequency: {}'.format(e))
             # try:
@@ -95,9 +96,17 @@ class Autopilot(Node):
             #         att_freq = self.mav_parm.mavset(self.serial_connection, "sr0_", 50)
             # except Exception as e:
             #     self._logger.error('Error in setting frequency: {}'.format(e))
-        self.reboot_and_arm()
+            if not self.is_armed:
+                self.reboot_and_arm()
 
         self._logger.info(f'Connection is established to port: <{serial_path}>')
+
+    def check_arm(self):
+        hb = self.serial_connection.recv_match(type="HEARTBEAT", blocking=True)
+        self.is_armed = False
+        if hb.base_mode == 193:
+            self.is_armed = True
+        return self.is_armed
 
     def reboot_and_arm(self):
         try:
@@ -109,6 +118,7 @@ class Autopilot(Node):
             self._logger.info("Reconnecting to the Autopilot")
             self.is_rebooted = True
             self.initialize_connection()
+
         except Exception as e:
             msg = str(e)
             try:
@@ -291,7 +301,7 @@ class Autopilot(Node):
 
         else:
             self._logger.error("No Change on mode")
-            res.success= False
+            res.success = False
 
         return res
 
