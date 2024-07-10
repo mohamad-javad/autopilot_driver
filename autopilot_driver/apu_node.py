@@ -21,6 +21,7 @@ from autopilot_msgs.srv import SendGPS, SendMPUMsg, SetMode
 class Autopilot(Node):
     def __init__(self):
         super().__init__('Autopilot_Base')
+        self.request = None
         self.mode_name = "GUIDED"
         self.mode = 15
         self.is_rebooted = False
@@ -147,7 +148,8 @@ class Autopilot(Node):
             if self.is_gps_msg:
                 self.serial_connection.mav.send(self.gps_msg)
                 self.is_gps_msg = False
-            if self.mpu_msg is not None and time.time() - self.last_sent > 0.01:
+            if self.is_mpu_msg and time.time() - self.last_sent > 0.01:
+                self.create_mpu_msg()
                 self.serial_connection.write(self.mpu_msg)
         except serial.serialutil.SerialException as e:
             self._logger.error(f"Error in sending message: {e}")
@@ -246,25 +248,9 @@ class Autopilot(Node):
 
     def mpu_msg_responder(self, req: SendMPUMsg.Request, res: SendMPUMsg.Response):
         try:
-            m_msg = req.mpu_msg
-            mpu_msg = MPU_Message(
-                preamble=m_msg.preamble,
-                mode=m_msg.mode,
-                refrences=[m_msg.sta_ref, m_msg.str_ref, m_msg.yaw_ref, m_msg.yaw_rate_ref, m_msg.swa,
-                            m_msg.swar, m_msg.reserved0, m_msg.reserved1, m_msg.reserved2, m_msg.reserved3,
-                            m_msg.speed_ref, m_msg.acc_ref, m_msg.jerk_ref, m_msg.gpa_ref, m_msg.ebrake_ref,
-                            m_msg.hbrake_ref, m_msg.reserved4,
-                            m_msg.reserved5, m_msg.reserved6, m_msg.gear],
-                oauMode=m_msg.mode_fb,
-                oauSwitches=m_msg.switch_fb,
-                oauSteering=m_msg.steer_fb,
-                oauAcc=m_msg.acc_fb,
-                oauEBrake=m_msg.ebrake_fb,
-                oauHBrake=m_msg.hbrake_fb
-            )
-
-            self.mpu_msg = mpu_msg.pack(self.serial_connection.mav)
-            self._logger.info(f"Sending: {binascii.hexlify(self.mpu_msg)}")
+            self.request = req.mpu_msg
+            self.create_mpu_msg()
+            # self._logger.info(f"Sending: {binascii.hexlify(self.mpu_msg)}")
         except Exception as e:
             self._logger.error('Error in creating MPU message: {}'.format(e))
             res.success = False
@@ -273,6 +259,25 @@ class Autopilot(Node):
         self.is_mpu_msg = True
         res.success = True
         return res
+
+    def create_mpu_msg(self):
+        m_msg = self.request
+        mpu_msg = MPU_Message(
+            preamble=m_msg.preamble,
+            mode=m_msg.mode,
+            refrences=[m_msg.sta_ref, m_msg.str_ref, m_msg.yaw_ref, m_msg.yaw_rate_ref, m_msg.swa,
+                       m_msg.swar, m_msg.reserved0, m_msg.reserved1, m_msg.reserved2, m_msg.reserved3,
+                       m_msg.speed_ref, m_msg.acc_ref, m_msg.jerk_ref, m_msg.gpa_ref, m_msg.ebrake_ref,
+                       m_msg.hbrake_ref, m_msg.reserved4,
+                       m_msg.reserved5, m_msg.reserved6, m_msg.gear],
+            oauMode=m_msg.mode_fb,
+            oauSwitches=m_msg.switch_fb,
+            oauSteering=m_msg.steer_fb,
+            oauAcc=m_msg.acc_fb,
+            oauEBrake=m_msg.ebrake_fb,
+            oauHBrake=m_msg.hbrake_fb
+        )
+        self.mpu_msg = mpu_msg.pack(self.serial_connection.mav)
 
     def set_mode_responder(self, msg:SetMode.Request, res: SetMode.Response):
         mode: str= msg.mode.upper()
