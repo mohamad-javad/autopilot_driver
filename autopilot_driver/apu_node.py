@@ -14,6 +14,7 @@ from mavros_msgs.msg import GimbalDeviceAttitudeStatus, GPSRAW, GPSINPUT, VfrHud
 from mavros_msgs.srv import CommandLong
 from pymavlink import mavutil as mavu, mavparm
 from pymavlink.dialects.v20.ardupilotmega import MAVLink_ipc_data_message as MPU_Message
+from pymavlink.dialects.v20.common import MAV_MODE_FLAG_DECODE_POSITION_SAFETY
 from autopilot_msgs.msg import Mpu
 from autopilot_msgs.srv import SendGPS, SendMPUMsg, SetMode
 
@@ -66,7 +67,8 @@ class Autopilot(Node):
                         serial_path += str(i)
                         break
                 self._logger.info(f"Connecting to Autopilot in port {serial_path}")
-                self.serial_connection = mavu.mavlink_connection(serial_path, baud=921600)
+                self.serial_connection = mavu.mavlink_connection(serial_path)
+                self.serial_connection.wait_heartbeat()
                 if self.check_arm():
                     self.is_rebooted = True
                 break
@@ -96,15 +98,15 @@ class Autopilot(Node):
             #         att_freq = self.mav_parm.mavset(self.serial_connection, "sr0_", 50)
             # except Exception as e:
             #     self._logger.error('Error in setting frequency: {}'.format(e))
-            if not self.is_armed:
-                self.reboot_and_arm()
+        if not self.check_arm():
+            self.reboot_and_arm()
 
         self._logger.info(f'Connection is established to port: <{serial_path}>')
 
     def check_arm(self):
         hb = self.serial_connection.recv_match(type="HEARTBEAT", blocking=True)
         self.is_armed = False
-        if hb.base_mode == 193:
+        if hb.base_mode & MAV_MODE_FLAG_DECODE_POSITION_SAFETY:
             self.is_armed = True
         return self.is_armed
 
@@ -118,18 +120,18 @@ class Autopilot(Node):
             self._logger.info("Reconnecting to the Autopilot")
             self.is_rebooted = True
             self.initialize_connection()
-
+            time.sleep(5)
         except Exception as e:
             msg = str(e)
             try:
                 self._logger.info("Disarming the Autopilot. Please wait ...!")
-                time.sleep(2)
                 self.serial_connection.arducopter_disarm()
-                time.sleep(3)
+                time.sleep(.1)
                 self._logger.info(f"Set the Autopilot Mode to {self.mode_name}")
                 self.serial_connection.set_mode(self.mode)
-                self._logger.info("Arming the Autopilot")
+                self._logger.info("Arming the Autopilot...")
                 self.serial_connection.arducopter_arm()
+                self._logger.info("Arming the Autopilot ==> Done!")
             except Exception as e:
                 self._logger.error('Error in setting mode and arming the APU: {}'.format(e))
                 self._logger.info("Reconnecting to Autopilot")
@@ -226,9 +228,9 @@ class Autopilot(Node):
 
     def gps_msg_responder(self, req: SendGPS.Request, res: SendGPS.Response):
         try:
-            g_msg = req.gps_msg
+            g_msg: GPSINPUT = req.gps_msg
             self.gps_msg = mavu.mavlink.MAVLink_gps_input_message(
-                time_usec=int(g_msg.time_usec),
+                time_usec=int(g_msg.header.stamp.sec * 1000000 + g_msg.header.stamp.nanosec / 1000),
                 gps_id=int(g_msg.gps_id),
                 ignore_flags=int(g_msg.ignore_flags),
                 time_week_ms=int(g_msg.time_week_ms),
