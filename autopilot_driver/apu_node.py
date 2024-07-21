@@ -157,16 +157,27 @@ class Autopilot(Node):
             self._logger.error("Error in reading message: ".format(e))
 
         try:
+            if self.is_mpu_msg and ((time.time() - self.last_sent) > 0.05):
+                self.create_mpu_msg()
+                self.serial_connection.write(self.mpu_msg)
+                self._logger.info(
+                    f"Sending MPU Message!!! mode: {self.request.mode}, gear: {self.request.gear}, sta: {self.request.sta_ref}, gpa: {self.request.gpa_ref}")
+                self.last_sent = time.time()
+
+        except serial.serialutil.SerialException as e:
+            self._logger.error(f"Error in sending MPU message: {e}")
+        except Exception as e:
+            self._logger.error("Error in sending MPU message: {0}".format(e))
+            self.initialize_connection()
+
+        try:
             if self.is_gps_msg:
                 self.serial_connection.mav.send(self.gps_msg)
                 self.is_gps_msg = False
-            if self.is_mpu_msg and time.time() - self.last_sent > 0.01:
-                self.create_mpu_msg()
-                self.serial_connection.write(self.mpu_msg)
         except serial.serialutil.SerialException as e:
-            self._logger.error(f"Error in sending message: {e}")
+            self._logger.error(f"Error in sending GPS message: {e}")
         except Exception as e:
-            self._logger.error("Error in sending message: ".format(e))
+            self._logger.error("Error in sending GPS message: {0}".format(e))
             self.initialize_connection()
 
     def vfr_hud_callback(self, msg):
