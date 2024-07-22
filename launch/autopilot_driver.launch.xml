@@ -1,0 +1,11 @@
+<launch>
+
+    <node pkg="autopilot_driver" name="autopilot_driver" exec="apu_node">
+
+    </node>
+    <node pkg="gps_network_pkg" name="gps_pkg" exec="gps_node">
+
+    </node>
+    <node pkg="autopilot_driver" name="apu_sensory" exec="apu_sensory">
+
+</launch>
