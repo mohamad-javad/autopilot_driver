@@ -216,6 +216,7 @@ class Autopilot(Node):
     def imu_callback(self, imu_msg):
         _msg = Imu()
         _msg.header.stamp = self.get_clock().now().to_msg()
+        _msg.header.frame_id = 'smrc/imu_link'
 
         _msg.orientation.w = 0.0
 
