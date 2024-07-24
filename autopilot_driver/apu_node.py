@@ -9,6 +9,9 @@ from rclpy.node import Node
 from sensor_msgs.msg import Imu, NavSatFix
 from std_msgs.msg import String, Float32, Int8
 from geometry_msgs.msg import Quaternion, Twist
+from tf_transformations import quaternion_from_euler
+from scipy import constants
+import numpy as np
 
 from mavros_msgs.msg import GimbalDeviceAttitudeStatus, GPSRAW, GPSINPUT, VfrHud
 from mavros_msgs.srv import CommandLong
@@ -73,7 +76,7 @@ class Autopilot(Node):
                     self.is_rebooted = True
                 break
             except Exception as e:
-                self._logger.error('Error in connection: {}'.format(e))
+                self._logger.error('Error in connection: {}'.format(e), throttle_duration_sec=3)
                 time.sleep(.5)
         try:
             self._logger.info("Setting Attitude Frequency to 50")
@@ -147,7 +150,7 @@ class Autopilot(Node):
                 elif msg.get_type() == 'ATTITUDE':
                     self.attitude_callback(msg)
                     self.att_msg = msg
-                elif msg.get_type() == 'RAW_IMU':
+                elif msg.get_type() == 'SCALED_IMU2':
                     self.imu_callback(msg)
         except serial.serialutil.SerialException as e:
             self._logger.error("Error in serial connection: ".format(e))
@@ -198,42 +201,53 @@ class Autopilot(Node):
 
     def attitude_callback(self, msg):
         _msg = GimbalDeviceAttitudeStatus()
-        _msg.header.stamp = self.get_clock().now().to_msg()
-        _msg.q.x = msg.roll
-        _msg.q.y = msg.pitch
-        _msg.q.z = msg.yaw
-        _msg.q.w = 0.0
+
+        q = quaternion_from_euler(msg.roll, -msg.pitch, -msg.yaw, axes='sxyz')
+        _msg.q.w = q[0]
+        _msg.q.x = q[1]
+        _msg.q.y = q[2]
+        _msg.q.z = q[3]
+
         _msg.angular_velocity_x = msg.rollspeed
-        _msg.angular_velocity_y = msg.pitchspeed
-        _msg.angular_velocity_z = msg.yawspeed
+        _msg.angular_velocity_y = -msg.pitchspeed
+        _msg.angular_velocity_z = -msg.yawspeed
+
         self.attitude_msg = _msg
 
     def att_pub_callback(self):
         if self.attitude_msg is not None:
+            self.attitude_msg.header.stamp = self.get_clock().now().to_msg()
             self.attitude_publisher_.publish(self.attitude_msg)
             self.attitude_msg = None
 
     def imu_callback(self, imu_msg):
         _msg = Imu()
-        _msg.header.stamp = self.get_clock().now().to_msg()
         _msg.header.frame_id = 'smrc/imu_link'
 
-        _msg.orientation.w = 0.0
-
-        _msg.linear_acceleration.x = float(imu_msg.xacc)
-        _msg.linear_acceleration.y = float(imu_msg.yacc)
-        _msg.linear_acceleration.z = float(imu_msg.zacc)
+        # convert from mG to m/s2
+        _msg.linear_acceleration.x = float(imu_msg.xacc) / 1000 * constants.g
+        _msg.linear_acceleration.y = float(imu_msg.yacc) / 1000 * constants.g
+        _msg.linear_acceleration.z = float(imu_msg.zacc) / 1000 * constants.g
+        _msg.linear_acceleration_covariance = np.eye(3, dtype=np.float64).flatten() * 0.0003
 
         self.imu_msg = _msg
 
     def imu_pub_callback(self):
         if self.imu_msg is not None and self.att_msg is not None:
-            self.imu_msg.orientation.x = self.att_msg.roll
-            self.imu_msg.orientation.y = self.att_msg.pitch
-            self.imu_msg.orientation.z = self.att_msg.yaw
-            self.imu_msg.angular_velocity.x = float(self.att_msg.rollspeed)
-            self.imu_msg.angular_velocity.y = float(self.att_msg.pitchspeed)
-            self.imu_msg.angular_velocity.z = float(self.att_msg.yawspeed)
+            self.imu_msg.header.stamp = self.get_clock().now().to_msg()
+
+            q = quaternion_from_euler(self.att_msg.roll, -self.att_msg.pitch, -self.att_msg.yaw, axes='sxyz')
+            self.imu_msg.orientation.w = q[0]
+            self.imu_msg.orientation.x = q[1]
+            self.imu_msg.orientation.y = q[2]
+            self.imu_msg.orientation.z = q[3]
+            self.imu_msg.orientation_covariance = np.eye(3, dtype=np.float64).flatten()
+
+            self.imu_msg.angular_velocity.x = self.att_msg.rollspeed
+            self.imu_msg.angular_velocity.y = -self.att_msg.pitchspeed
+            self.imu_msg.angular_velocity.z = -self.att_msg.yawspeed
+            self.imu_msg.angular_velocity_covariance = np.eye(3, dtype=np.float64).flatten() * 0.02
+
             self.imu_publisher_.publish(self.imu_msg)
             self.imu_msg = None
         return
