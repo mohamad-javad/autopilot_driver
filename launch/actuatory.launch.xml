@@ -1,0 +1,28 @@
+<launch>
+    <arg name="gps_state" default="true"/>
+    <arg name="autopilot_state" default="true"/>
+    <arg name="apu_sensory_state" default="true"/>
+    <arg name="rqt_state" default="true"/>
+
+
+    <group if="$(var autopilot_state)">
+        <node pkg="autopilot_driver" name="autopilot_driver" exec="apu_node">
+        </node>
+    </group>
+
+    <group if="$(var gps_state)">
+        <node pkg="gps_network_pkg" name="gps_pkg" exec="gps_node">
+        </node>
+    </group>
+
+    <group if="$(var apu_sensory_state)">
+        <node pkg="autopilot_driver" name="apu_sensory" exec="apu_sensory">
+        </node>
+    </group>
+
+    <!--    RQT    -->
+    <group if="$(var rqt_state)">
+        <node name="rqt_gui" pkg="rqt_gui" type="rqt_gui"/>
+    </group>
+
+</launch>
