@@ -76,8 +76,8 @@ class Autopilot(Node):
                     self.is_rebooted = True
                 break
             except Exception as e:
-                self._logger.error('Error in connection: {}'.format(e), throttle_duration_sec=3)
-                time.sleep(.5)
+                self._logger.error('Error in connection: {}'.format(e))
+                time.sleep(1)
         try:
             self._logger.info("Setting Attitude Frequency to 50")
             assert self.mav_parm.mavset(
