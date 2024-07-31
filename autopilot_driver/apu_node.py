@@ -30,10 +30,12 @@ class Autopilot(Node):
         self.mode_name = "GUIDED"
         self.mode = 15
         self.is_rebooted = False
+        self.heading_ = 0.0
         self.attitude_msg = None
         self.last_sent = 0
         self.imu_msg = None
         self.vfrHdu_msg = None
+        self.heading_subscriber = self.create_subscription(Float32,'/sensing/gnss/raynmand/heading', self.heading_callback, 10)
         self.imu_publisher_ = self.create_publisher(Imu, '/autopilot/imu', 10)
         self.attitude_publisher_ = self.create_publisher(
             GimbalDeviceAttitudeStatus, '/autopilot/attitude', 10
@@ -183,6 +185,9 @@ class Autopilot(Node):
             self._logger.error("Error in sending GPS message: {0}".format(e))
             self.initialize_connection()
 
+    def heading_callback(self, msg):
+        self.heading_ = msg.data
+
     def vfr_hud_callback(self, msg):
         _msg = VfrHud()
         _msg.header.stamp = self.get_clock().now().to_msg()
@@ -202,11 +207,11 @@ class Autopilot(Node):
     def attitude_callback(self, msg):
         _msg = GimbalDeviceAttitudeStatus()
 
-        q = quaternion_from_euler(msg.roll, -msg.pitch, -msg.yaw, axes='sxyz')
-        _msg.q.w = q[0]
-        _msg.q.x = q[1]
-        _msg.q.y = q[2]
-        _msg.q.z = q[3]
+        q = quaternion_from_euler(msg.roll, -msg.pitch, self.heading_, axes='sxyz')
+        _msg.q.x = q[0]
+        _msg.q.y = q[1]
+        _msg.q.z = q[2]
+        _msg.q.w = q[3]
 
         _msg.angular_velocity_x = msg.rollspeed
         _msg.angular_velocity_y = -msg.pitchspeed
@@ -236,11 +241,11 @@ class Autopilot(Node):
         if self.imu_msg is not None and self.att_msg is not None:
             self.imu_msg.header.stamp = self.get_clock().now().to_msg()
 
-            q = quaternion_from_euler(self.att_msg.roll, -self.att_msg.pitch, -self.att_msg.yaw, axes='sxyz')
-            self.imu_msg.orientation.w = q[0]
-            self.imu_msg.orientation.x = q[1]
-            self.imu_msg.orientation.y = q[2]
-            self.imu_msg.orientation.z = q[3]
+            q = quaternion_from_euler(self.att_msg.roll, -self.att_msg.pitch, self.heading_, axes='sxyz')
+            self.imu_msg.orientation.x = q[0]
+            self.imu_msg.orientation.y = q[1]
+            self.imu_msg.orientation.z = q[2]
+            self.imu_msg.orientation.w = q[3]
             self.imu_msg.orientation_covariance = np.eye(3, dtype=np.float64).flatten()
 
             self.imu_msg.angular_velocity.x = self.att_msg.rollspeed
