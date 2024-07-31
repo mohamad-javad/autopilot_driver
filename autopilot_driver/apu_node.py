@@ -71,14 +71,14 @@ class Autopilot(Node):
                     if os.path.exists(serial_path + str(i)):
                         serial_path += str(i)
                         break
-                self._logger.info(f"Connecting to Autopilot in port {serial_path}")
+                self._logger.info(f"Connecting to Autopilot in port {serial_path}", once=True)
                 self.serial_connection = mavu.mavlink_connection(serial_path)
                 self.serial_connection.wait_heartbeat()
                 if self.check_arm():
                     self.is_rebooted = True
                 break
             except Exception as e:
-                self._logger.error('Error in connection: {}'.format(e))
+                self._logger.error('Error in connection: {}'.format(e), throttle_duration_sec=3)
                 time.sleep(1)
         try:
             self._logger.info("Setting Attitude Frequency to 50")
@@ -269,16 +269,17 @@ class Autopilot(Node):
                 fix_type=int(g_msg.fix_type),
                 lat=int(g_msg.lat),
                 lon=int(g_msg.lon),
-                alt=int(g_msg.alt),
-                hdop=int(g_msg.hdop),
-                vdop=int(g_msg.vdop),
-                vn=int(g_msg.vn),
-                ve=int(g_msg.ve),
-                vd=int(g_msg.vd),
-                speed_accuracy=int(g_msg.speed_accuracy),
-                horiz_accuracy=int(g_msg.horiz_accuracy),
-                vert_accuracy=int(g_msg.vert_accuracy),
-                satellites_visible=int(g_msg.satellites_visible)
+                alt=float(g_msg.alt),
+                hdop=float(g_msg.hdop),
+                vdop=float(g_msg.vdop),
+                vn=float(g_msg.vn),
+                ve=float(g_msg.ve),
+                vd=float(g_msg.vd),
+                speed_accuracy=float(g_msg.speed_accuracy),
+                horiz_accuracy=float(g_msg.horiz_accuracy),
+                vert_accuracy=float(g_msg.vert_accuracy),
+                satellites_visible=int(g_msg.satellites_visible),
+                yaw=int(g_msg.yaw)
             )
         except Exception as e:
             self._logger.error('Error in creating GPS message: {}'.format(e))
