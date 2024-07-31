@@ -9,6 +9,9 @@ from rclpy.node import Node
 from sensor_msgs.msg import Imu, NavSatFix
 from std_msgs.msg import String, Float32, Int8
 from geometry_msgs.msg import Quaternion, Twist
+from tf_transformations import quaternion_from_euler
+from scipy import constants
+import numpy as np
 
 from mavros_msgs.msg import GimbalDeviceAttitudeStatus, GPSRAW, GPSINPUT, VfrHud
 from mavros_msgs.srv import CommandLong
@@ -27,10 +30,12 @@ class Autopilot(Node):
         self.mode_name = "GUIDED"
         self.mode = 15
         self.is_rebooted = False
+        self.heading_ = 0.0
         self.attitude_msg = None
         self.last_sent = 0
         self.imu_msg = None
         self.vfrHdu_msg = None
+        self.heading_subscriber = self.create_subscription(Float32,'/sensing/gnss/raynmand/heading', self.heading_callback, 10)
         self.imu_publisher_ = self.create_publisher(Imu, '/autopilot/imu', 10)
         self.attitude_publisher_ = self.create_publisher(
             GimbalDeviceAttitudeStatus, '/autopilot/attitude', 10
@@ -66,15 +71,15 @@ class Autopilot(Node):
                     if os.path.exists(serial_path + str(i)):
                         serial_path += str(i)
                         break
-                self._logger.info(f"Connecting to Autopilot in port {serial_path}")
+                self._logger.info(f"Connecting to Autopilot in port {serial_path}", once=True)
                 self.serial_connection = mavu.mavlink_connection(serial_path)
                 self.serial_connection.wait_heartbeat()
                 if self.check_arm():
                     self.is_rebooted = True
                 break
             except Exception as e:
-                self._logger.error('Error in connection: {}'.format(e))
-                time.sleep(.5)
+                self._logger.error('Error in connection: {}'.format(e), throttle_duration_sec=3)
+                time.sleep(1)
         try:
             self._logger.info("Setting Attitude Frequency to 50")
             assert self.mav_parm.mavset(
@@ -147,7 +152,7 @@ class Autopilot(Node):
                 elif msg.get_type() == 'ATTITUDE':
                     self.attitude_callback(msg)
                     self.att_msg = msg
-                elif msg.get_type() == 'RAW_IMU':
+                elif msg.get_type() == 'SCALED_IMU2':
                     self.imu_callback(msg)
         except serial.serialutil.SerialException as e:
             self._logger.error("Error in serial connection: ".format(e))
@@ -180,6 +185,9 @@ class Autopilot(Node):
             self._logger.error("Error in sending GPS message: {0}".format(e))
             self.initialize_connection()
 
+    def heading_callback(self, msg):
+        self.heading_ = msg.data
+
     def vfr_hud_callback(self, msg):
         _msg = VfrHud()
         _msg.header.stamp = self.get_clock().now().to_msg()
@@ -198,41 +206,53 @@ class Autopilot(Node):
 
     def attitude_callback(self, msg):
         _msg = GimbalDeviceAttitudeStatus()
-        _msg.header.stamp = self.get_clock().now().to_msg()
-        _msg.q.x = msg.roll
-        _msg.q.y = msg.pitch
-        _msg.q.z = msg.yaw
-        _msg.q.w = 0.0
+
+        q = quaternion_from_euler(msg.roll, -msg.pitch, self.heading_, axes='sxyz')
+        _msg.q.x = q[0]
+        _msg.q.y = q[1]
+        _msg.q.z = q[2]
+        _msg.q.w = q[3]
+
         _msg.angular_velocity_x = msg.rollspeed
-        _msg.angular_velocity_y = msg.pitchspeed
-        _msg.angular_velocity_z = msg.yawspeed
+        _msg.angular_velocity_y = -msg.pitchspeed
+        _msg.angular_velocity_z = -msg.yawspeed
+
         self.attitude_msg = _msg
 
     def att_pub_callback(self):
         if self.attitude_msg is not None:
+            self.attitude_msg.header.stamp = self.get_clock().now().to_msg()
             self.attitude_publisher_.publish(self.attitude_msg)
             self.attitude_msg = None
 
     def imu_callback(self, imu_msg):
         _msg = Imu()
-        _msg.header.stamp = self.get_clock().now().to_msg()
+        _msg.header.frame_id = 'smrc/imu_link'
 
-        _msg.orientation.w = 0.0
-
-        _msg.linear_acceleration.x = float(imu_msg.xacc)
-        _msg.linear_acceleration.y = float(imu_msg.yacc)
-        _msg.linear_acceleration.z = float(imu_msg.zacc)
+        # convert from mG to m/s2
+        _msg.linear_acceleration.x = float(imu_msg.xacc) / 1000 * constants.g
+        _msg.linear_acceleration.y = float(imu_msg.yacc) / 1000 * constants.g
+        _msg.linear_acceleration.z = float(imu_msg.zacc) / 1000 * constants.g
+        _msg.linear_acceleration_covariance = np.eye(3, dtype=np.float64).flatten() * 0.0003
 
         self.imu_msg = _msg
 
     def imu_pub_callback(self):
         if self.imu_msg is not None and self.att_msg is not None:
-            self.imu_msg.orientation.x = self.att_msg.roll
-            self.imu_msg.orientation.y = self.att_msg.pitch
-            self.imu_msg.orientation.z = self.att_msg.yaw
-            self.imu_msg.angular_velocity.x = float(self.att_msg.rollspeed)
-            self.imu_msg.angular_velocity.y = float(self.att_msg.pitchspeed)
-            self.imu_msg.angular_velocity.z = float(self.att_msg.yawspeed)
+            self.imu_msg.header.stamp = self.get_clock().now().to_msg()
+
+            q = quaternion_from_euler(self.att_msg.roll, -self.att_msg.pitch, self.heading_, axes='sxyz')
+            self.imu_msg.orientation.x = q[0]
+            self.imu_msg.orientation.y = q[1]
+            self.imu_msg.orientation.z = q[2]
+            self.imu_msg.orientation.w = q[3]
+            self.imu_msg.orientation_covariance = np.eye(3, dtype=np.float64).flatten()
+
+            self.imu_msg.angular_velocity.x = self.att_msg.rollspeed
+            self.imu_msg.angular_velocity.y = -self.att_msg.pitchspeed
+            self.imu_msg.angular_velocity.z = -self.att_msg.yawspeed
+            self.imu_msg.angular_velocity_covariance = np.eye(3, dtype=np.float64).flatten() * 0.02
+
             self.imu_publisher_.publish(self.imu_msg)
             self.imu_msg = None
         return
@@ -249,16 +269,17 @@ class Autopilot(Node):
                 fix_type=int(g_msg.fix_type),
                 lat=int(g_msg.lat),
                 lon=int(g_msg.lon),
-                alt=int(g_msg.alt),
-                hdop=int(g_msg.hdop),
-                vdop=int(g_msg.vdop),
-                vn=int(g_msg.vn),
-                ve=int(g_msg.ve),
-                vd=int(g_msg.vd),
-                speed_accuracy=int(g_msg.speed_accuracy),
-                horiz_accuracy=int(g_msg.horiz_accuracy),
-                vert_accuracy=int(g_msg.vert_accuracy),
-                satellites_visible=int(g_msg.satellites_visible)
+                alt=float(g_msg.alt),
+                hdop=float(g_msg.hdop),
+                vdop=float(g_msg.vdop),
+                vn=float(g_msg.vn),
+                ve=float(g_msg.ve),
+                vd=float(g_msg.vd),
+                speed_accuracy=float(g_msg.speed_accuracy),
+                horiz_accuracy=float(g_msg.horiz_accuracy),
+                vert_accuracy=float(g_msg.vert_accuracy),
+                satellites_visible=int(g_msg.satellites_visible),
+                yaw=int(g_msg.yaw)
             )
         except Exception as e:
             self._logger.error('Error in creating GPS message: {}'.format(e))

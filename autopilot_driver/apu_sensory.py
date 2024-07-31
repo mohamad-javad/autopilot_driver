@@ -6,7 +6,8 @@ from sensor_msgs.msg import NavSatFix
 from std_msgs.msg import String, Float32, Int8
 from geometry_msgs.msg import Quaternion, Twist
 from autoware_sensing_msgs.msg import GnssInsOrientationStamped
-from tf_transformations import quaternion_from_euler
+from tf_transformations import quaternion_from_euler, quaternion_multiply
+from math import pi
 from numpy import float64
 
 from mavros_msgs.msg import GimbalDeviceAttitudeStatus
@@ -46,11 +47,11 @@ class APUSensory(Node):
         _msg = GnssInsOrientationStamped()
         _msg.header.stamp = self.get_clock().now().to_msg()
         _msg.header.frame_id = 'base_link'
-        q = quaternion_from_euler(self.attitude_msg.q.x, self.attitude_msg.q.y, self.attitude_msg.q.z)
-        _msg.orientation.orientation.x = float64(q[0])
-        _msg.orientation.orientation.y = float64(q[1])
-        _msg.orientation.orientation.z = float64(q[2])
-        _msg.orientation.orientation.w = float64(q[3])
+
+        _msg.orientation.orientation = self.attitude_msg.q
+        _msg.orientation.rmse_rotation_x = 0.05
+        _msg.orientation.rmse_rotation_y = 0.05
+        _msg.orientation.rmse_rotation_z = 0.05
 
         self.orientation_publisher_.publish(_msg)
         self.attitude_msg = None
