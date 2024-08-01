@@ -185,8 +185,14 @@ class Autopilot(Node):
             self._logger.error("Error in sending GPS message: {0}".format(e))
             self.initialize_connection()
 
+    def heading_transform(self, deg):
+        if deg <= 0.:
+            deg += 360.
+        return np.deg2rad(deg)
+
     def heading_callback(self, msg):
-        self.heading_ = msg.data
+        heading = 180. - msg.data
+        self.heading_ = self.heading_transform(heading)
 
     def vfr_hud_callback(self, msg):
         _msg = VfrHud()
