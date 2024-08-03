@@ -166,7 +166,7 @@ class Autopilot(Node):
                 self.create_mpu_msg()
                 self.serial_connection.write(self.mpu_msg)
                 self._logger.info(
-                    f"Sending MPU Message!!! mode: {self.request.mode}, gear: {self.request.gear}, sta: {self.request.sta_ref}, gpa: {self.request.gpa_ref}")
+                    f"Sending MPU Message!!! mode: {self.request.mode}, gear: {self.request.gear}, sta: {self.request.sta_ref}, gpa: {self.request.gpa_ref}, speed: {self.request.speed_ref}")
                 self.last_sent = time.time()
 
         except serial.serialutil.SerialException as e:
