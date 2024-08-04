@@ -78,7 +78,7 @@ class Autopilot(Node):
                     self.is_rebooted = True
                 break
             except Exception as e:
-                self._logger.error('Error in connection: {}'.format(e), throttle_duration_sec=3)
+                self._logger.error('Error in connection APU: {}'.format(e), throttle_duration_sec=3)
                 time.sleep(1)
         try:
             self._logger.info("Setting Attitude Frequency to 50")
@@ -87,7 +87,7 @@ class Autopilot(Node):
             ), "Cant Set Attitude Frequency"
             self._logger.info("Set Attitude Frequency ==> Done!")
         except Exception as e:
-            self._logger.error('Error in setting frequency: {}'.format(e))
+            self._logger.error('Error in setting frequency APU: {}'.format(e))
         try:
             self._logger.info("Setting Raw_IMU Frequency to 50")
             assert self.mav_parm.mavset(
@@ -95,7 +95,7 @@ class Autopilot(Node):
             ), "Cant Set Attitude Frequency"
             self._logger.info("Set Raw_IMU Frequency ==> Done!")
         except Exception as e:
-            self._logger.error('Error in setting frequency: {}'.format(e))
+            self._logger.error('Error in setting frequency APU: {}'.format(e))
             # try:
             #     self._logger.info("Setting VFR_HUD Frequency to 50")
             #     att_freq = False
@@ -106,7 +106,7 @@ class Autopilot(Node):
         if not self.check_arm():
             self.reboot_and_arm()
 
-        self._logger.info(f'Connection is established to port: <{serial_path}>')
+        self._logger.info(f'APU connection is established to port: <{serial_path}>')
 
     def check_arm(self):
         hb = self.serial_connection.recv_match(type="HEARTBEAT", blocking=True)
@@ -155,7 +155,7 @@ class Autopilot(Node):
                 elif msg.get_type() == 'SCALED_IMU2':
                     self.imu_callback(msg)
         except serial.serialutil.SerialException as e:
-            self._logger.error("Error in serial connection: ".format(e))
+            self._logger.error("Error in serial connection APU: ".format(e))
             self.initialize_connection()
 
         except Exception as e:
