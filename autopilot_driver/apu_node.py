@@ -35,7 +35,7 @@ class Autopilot(Node):
         self.last_sent = 0
         self.imu_msg = None
         self.vfrHdu_msg = None
-        self.heading_subscriber = self.create_subscription(Float32,'/sensing/gnss/raynmand/heading', self.heading_callback, 10)
+        self.heading_subscriber = self.create_subscription(Float32,'/sensing/gnss/raymand/heading', self.heading_callback, 10)
         self.imu_publisher_ = self.create_publisher(Imu, '/autopilot/imu', 10)
         self.attitude_publisher_ = self.create_publisher(
             GimbalDeviceAttitudeStatus, '/autopilot/attitude', 10
