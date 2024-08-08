@@ -165,7 +165,7 @@ class Autopilot(Node):
             if self.is_mpu_msg and ((time.time() - self.last_sent) > 0.05):
                 self.create_mpu_msg()
                 self.serial_connection.write(self.mpu_msg)
-                self._logger.info(
+                self._logger.debug(
                     f"Sending MPU Message!!! mode: {self.request.mode}, gear: {self.request.gear}, sta: {self.request.sta_ref}, gpa: {self.request.gpa_ref}, speed: {self.request.speed_ref}")
                 self.last_sent = time.time()
 
