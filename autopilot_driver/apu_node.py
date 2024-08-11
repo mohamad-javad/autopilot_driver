@@ -42,9 +42,10 @@ class Autopilot(Node):
             GimbalDeviceAttitudeStatus, '/autopilot/attitude', 10
         )
         self.vfrHud_publisher_ = self.create_publisher(VfrHud, '/autopilot/vfr_hud', 10)
-        self.log_gps_pos_publisher_ = self.create_publisher(GeoPoint, 'autopilot/log/gps_pos', 10)
-        self.log_apu_pos_publisher_ = self.create_publisher(GeoPoint, 'autopilot/log/apu_pos', 10)
-        self.log_apu_speed_publisher_ = self.create_publisher(Float32, 'autopilot/log/apu_speed', 10)
+        self.log_gps_pos_publisher_ = self.create_publisher(GeoPoint, '/autopilot/log/gps_pos', 10)
+        self.log_apu_pos_publisher_ = self.create_publisher(GeoPoint, '/autopilot/log/apu_pos', 10)
+        self.log_apu_speed_publisher_ = self.create_publisher(Float32, '/autopilot/log/apu_speed', 10)
+        self.log_apu_yaw_publisher_ = self.create_publisher(Float32, '/autopilot/log/apu_yaw', 10)
 
         self.gps_service_ = self.create_service(
             SendGPS, '/autopilot/gps_srv', self.gps_msg_responder)
@@ -299,10 +300,13 @@ class Autopilot(Node):
                 satellites_visible=int(g_msg.satellites_visible),
                 yaw=int(g_msg.yaw)
             )
+            y = Float32()
+            y.data = float(g_msg.yaw / 100)
             point = GeoPoint()
             point.latitude = g_msg.lat * 1e-7
             point.longitude = g_msg.lon * 1e-7
             self.log_gps_pos_publisher_.publish(point)
+            self.log_apu_yaw_publisher_.publish(y)
         except Exception as e:
             self._logger.error('Error in creating GPS message: {}'.format(e))
             res.success = False
