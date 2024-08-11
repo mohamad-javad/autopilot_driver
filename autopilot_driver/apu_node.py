@@ -159,6 +159,8 @@ class Autopilot(Node):
                     self.att_msg = msg
                 elif msg.get_type() == 'SCALED_IMU2':
                     self.imu_callback(msg)
+                elif msg.get_type() == 'AHRS2':
+                    self.ahrs_callback(msg)
         except serial.serialutil.SerialException as e:
             self._logger.error("Error in serial connection APU: ".format(e))
             self.initialize_connection()
@@ -170,8 +172,9 @@ class Autopilot(Node):
             if self.is_mpu_msg and ((time.time() - self.last_sent) > 0.05):
                 self.create_mpu_msg()
                 self.serial_connection.write(self.mpu_msg)
-                self._logger.debug(
-                    f"Sending MPU Message!!! mode: {self.request.mode}, gear: {self.request.gear}, sta: {self.request.sta_ref}, gpa: {self.request.gpa_ref}, speed: {self.request.speed_ref}")
+                # self._logger.debug(
+                #     f"Sending MPU Message!!! mode: {self.request.mode}, gear: {self.request.gear}, sta: {self.request.sta_ref}, gpa:" +
+                #     f"{self.request.gpa_ref}, speed: {self.request.speed_ref}")
                 self.last_sent = time.time()
 
         except serial.serialutil.SerialException as e:
@@ -358,7 +361,11 @@ class Autopilot(Node):
 
         return res
 
-
+    def ahrs_callback(self, msg):
+        point = GeoPoint()
+        point.latitude = msg.lat * 1e-7
+        point.longitude = msg.lng * 1e-7
+        self.log_apu_pos_publisher_.publish(point)
 def main():
     rclpy.init()
     autopilot = Autopilot()
