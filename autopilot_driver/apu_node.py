@@ -7,7 +7,8 @@ import binascii
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Imu, NavSatFix
-from std_msgs.msg import String, Float32, Int8
+from std_msgs.msg import String, Float32, Int8, Int32
+from geographic_msgs.msg import GeoPoint
 from geometry_msgs.msg import Quaternion, Twist
 from tf_transformations import quaternion_from_euler
 from scipy import constants
@@ -41,6 +42,10 @@ class Autopilot(Node):
             GimbalDeviceAttitudeStatus, '/autopilot/attitude', 10
         )
         self.vfrHud_publisher_ = self.create_publisher(VfrHud, '/autopilot/vfr_hud', 10)
+        self.log_gps_pos_publisher_ = self.create_publisher(GeoPoint, 'autopilot/log/gps_pos')
+        self.log_apu_pos_publisher_ = self.create_publisher(GeoPoint, 'autopilot/log/apu_pos')
+        self.log_apu_speed_publisher_ = self.create_publisher(Float32, 'autopilot/log/apu_speed')
+
         self.gps_service_ = self.create_service(
             SendGPS, '/autopilot/gps_srv', self.gps_msg_responder)
         self.mpu_service_ = self.create_service(
@@ -287,6 +292,10 @@ class Autopilot(Node):
                 satellites_visible=int(g_msg.satellites_visible),
                 yaw=int(g_msg.yaw)
             )
+            point = GeoPoint()
+            point.latitude = g_msg.lat * 1e-7
+            point.longitude = g_msg.lon * 1e-7
+            self.log_gps_pos_publisher_.publish(point)
         except Exception as e:
             self._logger.error('Error in creating GPS message: {}'.format(e))
             res.success = False
