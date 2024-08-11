@@ -42,9 +42,9 @@ class Autopilot(Node):
             GimbalDeviceAttitudeStatus, '/autopilot/attitude', 10
         )
         self.vfrHud_publisher_ = self.create_publisher(VfrHud, '/autopilot/vfr_hud', 10)
-        self.log_gps_pos_publisher_ = self.create_publisher(GeoPoint, 'autopilot/log/gps_pos')
-        self.log_apu_pos_publisher_ = self.create_publisher(GeoPoint, 'autopilot/log/apu_pos')
-        self.log_apu_speed_publisher_ = self.create_publisher(Float32, 'autopilot/log/apu_speed')
+        self.log_gps_pos_publisher_ = self.create_publisher(GeoPoint, 'autopilot/log/gps_pos', 10)
+        self.log_apu_pos_publisher_ = self.create_publisher(GeoPoint, 'autopilot/log/apu_pos', 10)
+        self.log_apu_speed_publisher_ = self.create_publisher(Float32, 'autopilot/log/apu_speed', 10)
 
         self.gps_service_ = self.create_service(
             SendGPS, '/autopilot/gps_srv', self.gps_msg_responder)
