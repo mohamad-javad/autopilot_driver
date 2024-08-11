@@ -209,6 +209,10 @@ class Autopilot(Node):
         _msg.climb = msg.climb
 
         self.vfrHdu_msg = _msg
+        spd = Float32()
+        spd.data = float(msg.groundspeed)
+        self.log_apu_speed_publisher_.publish(spd)
+
 
     def vfrHud_pub_callback(self):
         if not self.vfrHdu_msg is None:
