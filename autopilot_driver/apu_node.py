@@ -21,6 +21,7 @@ from pymavlink.dialects.v20.ardupilotmega import MAVLink_ipc_data_message as MPU
 from pymavlink.dialects.v20.common import MAV_MODE_FLAG_DECODE_POSITION_SAFETY
 from autopilot_msgs.msg import Mpu
 from autopilot_msgs.srv import SendGPS, SendMPUMsg, SetMode
+from autoware_vehicle_msgs.msg import VelocityReport
 
 
 class Autopilot(Node):
@@ -36,11 +37,15 @@ class Autopilot(Node):
         self.last_sent = 0
         self.imu_msg = None
         self.vfrHdu_msg = None
+        self.velocity_sign = 1
         self.heading_subscriber = self.create_subscription(Float32,'/sensing/gnss/raymand/heading', self.heading_callback, 10)
+        self.velocity_sign_subscriber = self.create_subscription(Int8,'/sensing/gnss/raymand/velocity_sign', self.velocity_sign_callback, 10)
         self.imu_publisher_ = self.create_publisher(Imu, '/autopilot/imu', 10)
         self.attitude_publisher_ = self.create_publisher(
             GimbalDeviceAttitudeStatus, '/autopilot/attitude', 10
         )
+        self.velocity_status_publisher_ = self.create_publisher(VelocityReport,
+                                                                '/vehicle/status/velocity_status', 10)
         self.vfrHud_publisher_ = self.create_publisher(VfrHud, '/autopilot/vfr_hud', 10)
         self.log_gps_pos_publisher_ = self.create_publisher(GeoPoint, '/autopilot/log/gps_pos', 10)
         self.log_apu_pos_publisher_ = self.create_publisher(GeoPoint, '/autopilot/log/apu_pos', 10)
@@ -63,6 +68,7 @@ class Autopilot(Node):
         self.vfrHud_pub_timer = self.create_timer(1/50, self.vfrHud_pub_callback)
         self.imu_pub_timer = self.create_timer(1/50, self.imu_pub_callback)
         self.att_pub_timer = self.create_timer(1/50, self.att_pub_callback)
+        self.vel_status_pub_time = self.create_timer(0.05, self.velocity_status_pub_callback)
         self.att_msg = None
         self.gps_msg: GPSINPUT = None
         self.mpu_msg: Mpu = None
@@ -212,11 +218,23 @@ class Autopilot(Node):
         _msg.throttle = float(msg.throttle)
         _msg.climb = msg.climb
 
+        self.longitudinal_velocity = msg.groundspeed
         self.vfrHdu_msg = _msg
         spd = Float32()
         spd.data = float(msg.groundspeed)
         self.log_apu_speed_publisher_.publish(spd)
 
+    def velocity_sign_callback(self, msg):
+        self.velocity_sign = msg.data
+
+    def velocity_status_pub_callback(self):
+        velocity_msg = VelocityReport()
+        velocity_msg.header.frame_id = 'base_link'
+        velocity_msg.header.stamp = self.get_clock().now().to_msg()
+        velocity_msg.longitudinal_velocity = self.longitudinal_velocity * self.velocity_sign
+        velocity_msg.lateral_velocity = 0.0
+        velocity_msg.heading_rate = self.attitude_msg.angular_velocity.z
+        self.velocity_status_publisher_.publish(velocity_msg)
 
     def vfrHud_pub_callback(self):
         if not self.vfrHdu_msg is None:
