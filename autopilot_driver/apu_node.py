@@ -77,42 +77,42 @@ class Autopilot(Node):
                     if os.path.exists(serial_path + str(i)):
                         serial_path += str(i)
                         break
-                self._logger.info(f"Connecting to Autopilot in port {serial_path}", once=True)
+                self.get_logger().info(f"Connecting to Autopilot in port {serial_path}", once=True)
                 self.serial_connection = mavu.mavlink_connection(serial_path)
                 self.serial_connection.wait_heartbeat()
                 if self.check_arm():
                     self.is_rebooted = True
                 break
             except Exception as e:
-                self._logger.error('Error in connection APU: {}'.format(e), throttle_duration_sec=3)
+                self.get_logger().error('Error in connection APU: {}'.format(e), throttle_duration_sec=3)
                 time.sleep(1)
         try:
-            self._logger.info("Setting Attitude Frequency to 50")
+            self.get_logger().info("Setting Attitude Frequency to 50")
             assert self.mav_parm.mavset(
                self.serial_connection, "sr0_extra1", 50, retries=5
             ), "Cant Set Attitude Frequency"
-            self._logger.info("Set Attitude Frequency ==> Done!")
+            self.get_logger().info("Set Attitude Frequency ==> Done!")
         except Exception as e:
-            self._logger.error('Error in setting frequency APU: {}'.format(e))
+            self.get_logger().error('Error in setting frequency APU: {}'.format(e))
         try:
-            self._logger.info("Setting Raw_IMU Frequency to 50")
+            self.get_logger().info("Setting Raw_IMU Frequency to 50")
             assert self.mav_parm.mavset(
                    self.serial_connection, "sr0_raw_sens", 50, retries=5
             ), "Cant Set Attitude Frequency"
-            self._logger.info("Set Raw_IMU Frequency ==> Done!")
+            self.get_logger().info("Set Raw_IMU Frequency ==> Done!")
         except Exception as e:
-            self._logger.error('Error in setting frequency APU: {}'.format(e))
+            self.get_logger().error('Error in setting frequency APU: {}'.format(e))
             # try:
-            #     self._logger.info("Setting VFR_HUD Frequency to 50")
+            #     self.get_logger().info("Setting VFR_HUD Frequency to 50")
             #     att_freq = False
             #     while not att_freq:
             #         att_freq = self.mav_parm.mavset(self.serial_connection, "sr0_", 50)
             # except Exception as e:
-            #     self._logger.error('Error in setting frequency: {}'.format(e))
+            #     self.get_logger().error('Error in setting frequency: {}'.format(e))
         if not self.check_arm():
             self.reboot_and_arm()
 
-        self._logger.info(f'APU connection is established to port: <{serial_path}>')
+        self.get_logger().info(f'APU connection is established to port: <{serial_path}>')
 
     def check_arm(self):
         hb = self.serial_connection.recv_match(type="HEARTBEAT", blocking=True)
@@ -124,30 +124,30 @@ class Autopilot(Node):
     def reboot_and_arm(self):
         try:
             assert not self.is_rebooted, "Autopilot Initialization is Done!"
-            self._logger.info("Rebooting the Autopilot. Please wait ...!")
+            self.get_logger().info("Rebooting the Autopilot. Please wait ...!")
             time.sleep(3)
             self.serial_connection.reboot_autopilot()
             time.sleep(3)
-            self._logger.info("Reconnecting to the Autopilot")
+            self.get_logger().info("Reconnecting to the Autopilot")
             self.is_rebooted = True
             self.initialize_connection()
             time.sleep(5)
         except Exception as e:
             msg = str(e)
             try:
-                self._logger.info("Disarming the Autopilot. Please wait ...!")
+                self.get_logger().info("Disarming the Autopilot. Please wait ...!")
                 self.serial_connection.arducopter_disarm()
                 time.sleep(.1)
-                self._logger.info(f"Set the Autopilot Mode to {self.mode_name}")
+                self.get_logger().info(f"Set the Autopilot Mode to {self.mode_name}")
                 self.serial_connection.set_mode(self.mode)
-                self._logger.info("Arming the Autopilot...")
+                self.get_logger().info("Arming the Autopilot...")
                 self.serial_connection.arducopter_arm()
-                self._logger.info("Arming the Autopilot ==> Done!")
+                self.get_logger().info("Arming the Autopilot ==> Done!")
             except Exception as e:
-                self._logger.error('Error in setting mode and arming the APU: {}'.format(e))
-                self._logger.info("Reconnecting to Autopilot")
+                self.get_logger().error('Error in setting mode and arming the APU: {}'.format(e))
+                self.get_logger().info("Reconnecting to Autopilot")
                 self.initialize_connection()
-            self._logger.info(msg)
+            self.get_logger().info(msg)
 
     def receiver_callback(self):
         try:
@@ -163,25 +163,25 @@ class Autopilot(Node):
                 elif msg.get_type() == 'AHRS2':
                     self.ahrs_callback(msg)
         except serial.serialutil.SerialException as e:
-            self._logger.error("Error in serial connection APU: ".format(e))
+            self.get_logger().error("Error in serial connection APU: ".format(e))
             self.initialize_connection()
 
         except Exception as e:
-            self._logger.error("Error in reading message: ".format(e))
+            self.get_logger().error("Error in reading message: ".format(e))
 
         try:
             if self.is_mpu_msg and ((time.time() - self.last_sent) > 0.05):
                 self.create_mpu_msg()
                 self.serial_connection.write(self.mpu_msg)
-                # self._logger.debug(
+                # self.get_logger().debug(
                 #     f"Sending MPU Message!!! mode: {self.request.mode}, gear: {self.request.gear}, sta: {self.request.sta_ref}, gpa:" +
                 #     f"{self.request.gpa_ref}, speed: {self.request.speed_ref}")
                 self.last_sent = time.time()
 
         except serial.serialutil.SerialException as e:
-            self._logger.error(f"Error in sending MPU message: {e}")
+            self.get_logger().error(f"Error in sending MPU message: {e}")
         except Exception as e:
-            self._logger.error("Error in sending MPU message: {0}".format(e))
+            self.get_logger().error("Error in sending MPU message: {0}".format(e))
             self.initialize_connection()
 
         try:
@@ -189,9 +189,9 @@ class Autopilot(Node):
                 self.serial_connection.mav.send(self.gps_msg)
                 self.is_gps_msg = False
         except serial.serialutil.SerialException as e:
-            self._logger.error(f"Error in sending GPS message: {e}")
+            self.get_logger().error(f"Error in sending GPS message: {e}")
         except Exception as e:
-            self._logger.error("Error in sending GPS message: {0}".format(e))
+            self.get_logger().error("Error in sending GPS message: {0}".format(e))
             self.initialize_connection()
 
     def heading_transform(self, deg):
@@ -308,7 +308,7 @@ class Autopilot(Node):
             self.log_gps_pos_publisher_.publish(point)
             self.log_apu_yaw_publisher_.publish(y)
         except Exception as e:
-            self._logger.error('Error in creating GPS message: {}'.format(e))
+            self.get_logger().error('Error in creating GPS message: {}'.format(e))
             res.success = False
             return res
 
@@ -320,9 +320,9 @@ class Autopilot(Node):
         try:
             self.request = req.mpu_msg
             self.create_mpu_msg()
-            # self._logger.info(f"Sending: {binascii.hexlify(self.mpu_msg)}")
+            # self.get_logger().info(f"Sending: {binascii.hexlify(self.mpu_msg)}")
         except Exception as e:
-            self._logger.error('Error in creating MPU message: {}'.format(e))
+            self.get_logger().error('Error in creating MPU message: {}'.format(e))
             res.success = False
             return res
 
@@ -354,13 +354,13 @@ class Autopilot(Node):
         modes = {"GUIDED": 15, "AUTO": 10, "MANUAL": 0, "RTL": 11, "STEERING": 3, "HOLD": 4}
         self.mode = modes.get(mode) or 15
         if mode in modes.keys():
-            self._logger.warn(f"Setting mode to <{mode}>")
+            self.get_logger().warn(f"Setting mode to <{mode}>")
             self.mode_name = mode
             res.success = True
             self.reboot_and_arm()
 
         else:
-            self._logger.error("No Change on mode")
+            self.get_logger().error("No Change on mode")
             res.success = False
 
         return res
