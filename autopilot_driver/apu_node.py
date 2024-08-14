@@ -37,6 +37,7 @@ class Autopilot(Node):
         self.last_sent = 0
         self.imu_msg = None
         self.vfrHdu_msg = None
+        self.longitudinal_velocity = 0.0
         self.velocity_sign = 1
         self.heading_subscriber = self.create_subscription(Float32,'/sensing/gnss/raymand/heading', self.heading_callback, 10)
         self.velocity_sign_subscriber = self.create_subscription(Int8,'/sensing/gnss/raymand/velocity_sign', self.velocity_sign_callback, 10)
@@ -44,8 +45,8 @@ class Autopilot(Node):
         self.attitude_publisher_ = self.create_publisher(
             GimbalDeviceAttitudeStatus, '/autopilot/attitude', 10
         )
-        self.velocity_status_publisher_ = self.create_publisher(VelocityReport,
-                                                                '/vehicle/status/velocity_status', 10)
+        # self.velocity_status_publisher_ = self.create_publisher(VelocityReport,
+        #                                                         '/vehicle/status/velocity_status', 10)
         self.vfrHud_publisher_ = self.create_publisher(VfrHud, '/autopilot/vfr_hud', 10)
         self.log_gps_pos_publisher_ = self.create_publisher(GeoPoint, '/autopilot/log/gps_pos', 10)
         self.log_apu_pos_publisher_ = self.create_publisher(GeoPoint, '/autopilot/log/apu_pos', 10)
@@ -68,7 +69,7 @@ class Autopilot(Node):
         self.vfrHud_pub_timer = self.create_timer(1/50, self.vfrHud_pub_callback)
         self.imu_pub_timer = self.create_timer(1/50, self.imu_pub_callback)
         self.att_pub_timer = self.create_timer(1/50, self.att_pub_callback)
-        self.vel_status_pub_time = self.create_timer(0.05, self.velocity_status_pub_callback)
+        # self.vel_status_pub_time = self.create_timer(0.05, self.velocity_status_pub_callback)
         self.att_msg = None
         self.gps_msg: GPSINPUT = None
         self.mpu_msg: Mpu = None
@@ -233,7 +234,10 @@ class Autopilot(Node):
         velocity_msg.header.stamp = self.get_clock().now().to_msg()
         velocity_msg.longitudinal_velocity = self.longitudinal_velocity * self.velocity_sign
         velocity_msg.lateral_velocity = 0.0
-        velocity_msg.heading_rate = self.attitude_msg.angular_velocity.z
+        if self.imu_msg is not None:
+            velocity_msg.heading_rate = self.imu_msg.angular_velocity.z
+        else:
+            velocity_msg.heading_rate = 0.0
         self.velocity_status_publisher_.publish(velocity_msg)
 
     def vfrHud_pub_callback(self):
