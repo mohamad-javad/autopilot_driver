@@ -396,7 +396,7 @@ def main():
     rclpy.init()
     autopilot = Autopilot()
     rclpy.spin(autopilot)
-        try:
+    try:
         autopilot.serial_connection.close()
     except:
         pass
