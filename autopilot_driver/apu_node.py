@@ -396,6 +396,10 @@ def main():
     rclpy.init()
     autopilot = Autopilot()
     rclpy.spin(autopilot)
+        try:
+        autopilot.serial_connection.close()
+    except:
+        pass
     autopilot.destroy_node()
     rclpy.shutdown()
 
