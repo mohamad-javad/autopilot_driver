@@ -7,7 +7,8 @@ import binascii
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Imu, NavSatFix
-from std_msgs.msg import String, Float32, Int8
+from std_msgs.msg import String, Float32, Int8, Int32
+from geographic_msgs.msg import GeoPoint
 from geometry_msgs.msg import Quaternion, Twist
 from tf_transformations import quaternion_from_euler
 from scipy import constants
@@ -20,12 +21,14 @@ from pymavlink.dialects.v20.ardupilotmega import MAVLink_ipc_data_message as MPU
 from pymavlink.dialects.v20.common import MAV_MODE_FLAG_DECODE_POSITION_SAFETY
 from autopilot_msgs.msg import Mpu
 from autopilot_msgs.srv import SendGPS, SendMPUMsg, SetMode
+from autoware_vehicle_msgs.msg import VelocityReport
 
 
 class Autopilot(Node):
     def __init__(self):
         super().__init__('Autopilot_Base')
         self.is_armed = None
+        self.is_closed = False
         self.request = None
         self.mode_name = "GUIDED"
         self.mode = 15
@@ -35,12 +38,22 @@ class Autopilot(Node):
         self.last_sent = 0
         self.imu_msg = None
         self.vfrHdu_msg = None
-        self.heading_subscriber = self.create_subscription(Float32,'/sensing/gnss/raynmand/heading', self.heading_callback, 10)
+        self.longitudinal_velocity = 0.0
+        self.velocity_sign = 1
+        self.heading_subscriber = self.create_subscription(Float32,'/sensing/gnss/raymand/heading', self.heading_callback, 10)
+        self.velocity_sign_subscriber = self.create_subscription(Int8,'/sensing/gnss/raymand/velocity_sign', self.velocity_sign_callback, 10)
         self.imu_publisher_ = self.create_publisher(Imu, '/autopilot/imu', 10)
         self.attitude_publisher_ = self.create_publisher(
             GimbalDeviceAttitudeStatus, '/autopilot/attitude', 10
         )
+        # self.velocity_status_publisher_ = self.create_publisher(VelocityReport,
+        #                                                         '/vehicle/status/velocity_status', 10)
         self.vfrHud_publisher_ = self.create_publisher(VfrHud, '/autopilot/vfr_hud', 10)
+        self.log_gps_pos_publisher_ = self.create_publisher(GeoPoint, '/autopilot/log/gps_pos', 10)
+        self.log_apu_pos_publisher_ = self.create_publisher(GeoPoint, '/autopilot/log/apu_pos', 10)
+        self.log_apu_speed_publisher_ = self.create_publisher(Float32, '/autopilot/log/apu_speed', 10)
+        self.log_apu_yaw_publisher_ = self.create_publisher(Float32, '/autopilot/log/apu_yaw', 10)
+
         self.gps_service_ = self.create_service(
             SendGPS, '/autopilot/gps_srv', self.gps_msg_responder)
         self.mpu_service_ = self.create_service(
@@ -57,6 +70,7 @@ class Autopilot(Node):
         self.vfrHud_pub_timer = self.create_timer(1/50, self.vfrHud_pub_callback)
         self.imu_pub_timer = self.create_timer(1/50, self.imu_pub_callback)
         self.att_pub_timer = self.create_timer(1/50, self.att_pub_callback)
+        # self.vel_status_pub_time = self.create_timer(0.05, self.velocity_status_pub_callback)
         self.att_msg = None
         self.gps_msg: GPSINPUT = None
         self.mpu_msg: Mpu = None
@@ -71,42 +85,55 @@ class Autopilot(Node):
                     if os.path.exists(serial_path + str(i)):
                         serial_path += str(i)
                         break
-                self._logger.info(f"Connecting to Autopilot in port {serial_path}", once=True)
+                self.get_logger().info(f"Connecting to Autopilot in port {serial_path}", once=True)
                 self.serial_connection = mavu.mavlink_connection(serial_path)
                 self.serial_connection.wait_heartbeat()
                 if self.check_arm():
                     self.is_rebooted = True
                 break
             except Exception as e:
-                self._logger.error('Error in connection: {}'.format(e), throttle_duration_sec=3)
+                self.get_logger().error('Error in connection APU: {}'.format(e), throttle_duration_sec=3)
                 time.sleep(1)
         try:
-            self._logger.info("Setting Attitude Frequency to 50")
+            self.get_logger().info("Setting Attitude Frequency to 50")
             assert self.mav_parm.mavset(
                self.serial_connection, "sr0_extra1", 50, retries=5
             ), "Cant Set Attitude Frequency"
-            self._logger.info("Set Attitude Frequency ==> Done!")
+            self.get_logger().info("Set Attitude Frequency ==> Done!")
         except Exception as e:
-            self._logger.error('Error in setting frequency: {}'.format(e))
+            self.get_logger().error('Error in setting frequency APU: {}'.format(e))
         try:
-            self._logger.info("Setting Raw_IMU Frequency to 50")
+            self.get_logger().info("Setting Raw_IMU Frequency to 50")
             assert self.mav_parm.mavset(
                    self.serial_connection, "sr0_raw_sens", 50, retries=5
             ), "Cant Set Attitude Frequency"
-            self._logger.info("Set Raw_IMU Frequency ==> Done!")
+            self.get_logger().info("Set Raw_IMU Frequency ==> Done!")
         except Exception as e:
-            self._logger.error('Error in setting frequency: {}'.format(e))
+            self.get_logger().error('Error in setting frequency APU: {}'.format(e))
             # try:
-            #     self._logger.info("Setting VFR_HUD Frequency to 50")
+            #     self.get_logger().info("Setting VFR_HUD Frequency to 50")
             #     att_freq = False
             #     while not att_freq:
             #         att_freq = self.mav_parm.mavset(self.serial_connection, "sr0_", 50)
             # except Exception as e:
-            #     self._logger.error('Error in setting frequency: {}'.format(e))
+            #     self.get_logger().error('Error in setting frequency: {}'.format(e))
         if not self.check_arm():
             self.reboot_and_arm()
 
-        self._logger.info(f'Connection is established to port: <{serial_path}>')
+        self.get_logger().info(f'APU connection is established to port: <{serial_path}>')
+
+    def close_connection(self):
+        self.is_closed = True
+        try:
+            self.get_logger().info("Transfer to 'MANUAL' mode before closing connection.")
+            self.request.mode = 8
+        except:
+            self.get_logger().error(">>>>>\tCareful!!! Can't set mode to 'MANUAL' on exit.\t<<<<<")
+        
+        self.create_mpu_msg()
+        self.serial_connection.write(self.mpu_msg)
+        self.serial_connection.close()
+        self.get_logger().info("APU Connection is now closed.")
 
     def check_arm(self):
         hb = self.serial_connection.recv_match(type="HEARTBEAT", blocking=True)
@@ -118,32 +145,35 @@ class Autopilot(Node):
     def reboot_and_arm(self):
         try:
             assert not self.is_rebooted, "Autopilot Initialization is Done!"
-            self._logger.info("Rebooting the Autopilot. Please wait ...!")
+            self.get_logger().info("Rebooting the Autopilot. Please wait ...!")
             time.sleep(3)
             self.serial_connection.reboot_autopilot()
             time.sleep(3)
-            self._logger.info("Reconnecting to the Autopilot")
+            self.get_logger().info("Reconnecting to the Autopilot")
             self.is_rebooted = True
             self.initialize_connection()
             time.sleep(5)
         except Exception as e:
             msg = str(e)
             try:
-                self._logger.info("Disarming the Autopilot. Please wait ...!")
+                self.get_logger().info("Disarming the Autopilot. Please wait ...!")
                 self.serial_connection.arducopter_disarm()
                 time.sleep(.1)
-                self._logger.info(f"Set the Autopilot Mode to {self.mode_name}")
+                self.get_logger().info(f"Set the Autopilot Mode to {self.mode_name}")
                 self.serial_connection.set_mode(self.mode)
-                self._logger.info("Arming the Autopilot...")
+                self.get_logger().info("Arming the Autopilot...")
                 self.serial_connection.arducopter_arm()
-                self._logger.info("Arming the Autopilot ==> Done!")
+                self.get_logger().info("Arming the Autopilot ==> Done!")
             except Exception as e:
-                self._logger.error('Error in setting mode and arming the APU: {}'.format(e))
-                self._logger.info("Reconnecting to Autopilot")
+                self.get_logger().error('Error in setting mode and arming the APU: {}'.format(e))
+                self.get_logger().info("Reconnecting to Autopilot")
                 self.initialize_connection()
-            self._logger.info(msg)
+            self.get_logger().info(msg)
 
     def receiver_callback(self):
+        if self.is_closed:
+            return
+        
         try:
             msg = self.serial_connection.recv_msg()
             if msg is not None and msg.get_type() != 'BAD_DATA':
@@ -154,25 +184,29 @@ class Autopilot(Node):
                     self.att_msg = msg
                 elif msg.get_type() == 'SCALED_IMU2':
                     self.imu_callback(msg)
+                elif msg.get_type() == 'AHRS2':
+                    self.ahrs_callback(msg)
+
         except serial.serialutil.SerialException as e:
-            self._logger.error("Error in serial connection: ".format(e))
+            self.get_logger().error("Error in serial connection APU: ".format(e))
             self.initialize_connection()
 
         except Exception as e:
-            self._logger.error("Error in reading message: ".format(e))
+            self.get_logger().error("Error in reading message: ".format(e))
 
         try:
             if self.is_mpu_msg and ((time.time() - self.last_sent) > 0.05):
                 self.create_mpu_msg()
                 self.serial_connection.write(self.mpu_msg)
-                self._logger.info(
-                    f"Sending MPU Message!!! mode: {self.request.mode}, gear: {self.request.gear}, sta: {self.request.sta_ref}, gpa: {self.request.gpa_ref}")
+                # self.get_logger().debug(
+                #     f"Sending MPU Message!!! mode: {self.request.mode}, gear: {self.request.gear}, sta: {self.request.sta_ref}, gpa:" +
+                #     f"{self.request.gpa_ref}, speed: {self.request.speed_ref}")
                 self.last_sent = time.time()
 
         except serial.serialutil.SerialException as e:
-            self._logger.error(f"Error in sending MPU message: {e}")
+            self.get_logger().error(f"Error in sending MPU message: {e}")
         except Exception as e:
-            self._logger.error("Error in sending MPU message: {0}".format(e))
+            self.get_logger().error("Error in sending MPU message: {0}".format(e))
             self.initialize_connection()
 
         try:
@@ -180,13 +214,19 @@ class Autopilot(Node):
                 self.serial_connection.mav.send(self.gps_msg)
                 self.is_gps_msg = False
         except serial.serialutil.SerialException as e:
-            self._logger.error(f"Error in sending GPS message: {e}")
+            self.get_logger().error(f"Error in sending GPS message: {e}")
         except Exception as e:
-            self._logger.error("Error in sending GPS message: {0}".format(e))
+            self.get_logger().error("Error in sending GPS message: {0}".format(e))
             self.initialize_connection()
 
+    def heading_transform(self, deg):
+        if deg <= 0.:
+            deg += 360.
+        return np.deg2rad(deg)
+
     def heading_callback(self, msg):
-        self.heading_ = msg.data
+        heading = 180. - msg.data
+        self.heading_ = self.heading_transform(heading)
 
     def vfr_hud_callback(self, msg):
         _msg = VfrHud()
@@ -197,7 +237,26 @@ class Autopilot(Node):
         _msg.throttle = float(msg.throttle)
         _msg.climb = msg.climb
 
+        self.longitudinal_velocity = msg.groundspeed
         self.vfrHdu_msg = _msg
+        spd = Float32()
+        spd.data = float(msg.groundspeed)
+        self.log_apu_speed_publisher_.publish(spd)
+
+    def velocity_sign_callback(self, msg):
+        self.velocity_sign = msg.data
+
+    def velocity_status_pub_callback(self):
+        velocity_msg = VelocityReport()
+        velocity_msg.header.frame_id = 'base_link'
+        velocity_msg.header.stamp = self.get_clock().now().to_msg()
+        velocity_msg.longitudinal_velocity = self.longitudinal_velocity * self.velocity_sign
+        velocity_msg.lateral_velocity = 0.0
+        if self.imu_msg is not None:
+            velocity_msg.heading_rate = self.imu_msg.angular_velocity.z
+        else:
+            velocity_msg.heading_rate = 0.0
+        self.velocity_status_publisher_.publish(velocity_msg)
 
     def vfrHud_pub_callback(self):
         if not self.vfrHdu_msg is None:
@@ -281,8 +340,15 @@ class Autopilot(Node):
                 satellites_visible=int(g_msg.satellites_visible),
                 yaw=int(g_msg.yaw)
             )
+            y = Float32()
+            y.data = float(g_msg.yaw / 100)
+            point = GeoPoint()
+            point.latitude = g_msg.lat * 1e-7
+            point.longitude = g_msg.lon * 1e-7
+            self.log_gps_pos_publisher_.publish(point)
+            self.log_apu_yaw_publisher_.publish(y)
         except Exception as e:
-            self._logger.error('Error in creating GPS message: {}'.format(e))
+            self.get_logger().error('Error in creating GPS message: {}'.format(e))
             res.success = False
             return res
 
@@ -294,9 +360,9 @@ class Autopilot(Node):
         try:
             self.request = req.mpu_msg
             self.create_mpu_msg()
-            # self._logger.info(f"Sending: {binascii.hexlify(self.mpu_msg)}")
+            # self.get_logger().info(f"Sending: {binascii.hexlify(self.mpu_msg)}")
         except Exception as e:
-            self._logger.error('Error in creating MPU message: {}'.format(e))
+            self.get_logger().error('Error in creating MPU message: {}'.format(e))
             res.success = False
             return res
 
@@ -328,22 +394,30 @@ class Autopilot(Node):
         modes = {"GUIDED": 15, "AUTO": 10, "MANUAL": 0, "RTL": 11, "STEERING": 3, "HOLD": 4}
         self.mode = modes.get(mode) or 15
         if mode in modes.keys():
-            self._logger.warn(f"Setting mode to <{mode}>")
+            self.get_logger().warn(f"Setting mode to <{mode}>")
             self.mode_name = mode
             res.success = True
             self.reboot_and_arm()
 
         else:
-            self._logger.error("No Change on mode")
+            self.get_logger().error("No Change on mode")
             res.success = False
 
         return res
 
-
+    def ahrs_callback(self, msg):
+        point = GeoPoint()
+        point.latitude = msg.lat * 1e-7
+        point.longitude = msg.lng * 1e-7
+        self.log_apu_pos_publisher_.publish(point)
 def main():
     rclpy.init()
     autopilot = Autopilot()
     rclpy.spin(autopilot)
+    try:
+        autopilot.close_connection()
+    except:
+        autopilot.get_logger().error("Can not close APU connection.")
     autopilot.destroy_node()
     rclpy.shutdown()
 
