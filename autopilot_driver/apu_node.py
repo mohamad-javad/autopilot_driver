@@ -28,6 +28,7 @@ class Autopilot(Node):
     def __init__(self):
         super().__init__('Autopilot_Base')
         self.is_armed = None
+        self.is_closed = False
         self.request = None
         self.mode_name = "GUIDED"
         self.mode = 15
@@ -121,6 +122,19 @@ class Autopilot(Node):
 
         self.get_logger().info(f'APU connection is established to port: <{serial_path}>')
 
+    def close_connection(self):
+        self.is_closed = True
+        try:
+            self.get_logger().info("Transfer to 'MANUAL' mode before closing connection.")
+            self.request.mode = 8
+        except:
+            self.get_logger().error(">>>>>\tCareful!!! Can't set mode to 'MANUAL' on exit.\t<<<<<")
+        
+        self.create_mpu_msg()
+        self.serial_connection.write(self.mpu_msg)
+        self.serial_connection.close()
+        self.get_logger().info("APU Connection is now closed.")
+
     def check_arm(self):
         hb = self.serial_connection.recv_match(type="HEARTBEAT", blocking=True)
         self.is_armed = False
@@ -157,6 +171,9 @@ class Autopilot(Node):
             self.get_logger().info(msg)
 
     def receiver_callback(self):
+        if self.is_closed:
+            return
+        
         try:
             msg = self.serial_connection.recv_msg()
             if msg is not None and msg.get_type() != 'BAD_DATA':
@@ -169,6 +186,7 @@ class Autopilot(Node):
                     self.imu_callback(msg)
                 elif msg.get_type() == 'AHRS2':
                     self.ahrs_callback(msg)
+
         except serial.serialutil.SerialException as e:
             self.get_logger().error("Error in serial connection APU: ".format(e))
             self.initialize_connection()
@@ -397,9 +415,9 @@ def main():
     autopilot = Autopilot()
     rclpy.spin(autopilot)
     try:
-        autopilot.serial_connection.close()
+        autopilot.close_connection()
     except:
-        pass
+        autopilot.get_logger().error("Can not close APU connection.")
     autopilot.destroy_node()
     rclpy.shutdown()
 
