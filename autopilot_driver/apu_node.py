@@ -413,12 +413,12 @@ class Autopilot(Node):
 def main():
     rclpy.init()
     autopilot = Autopilot()
-    rclpy.spin(autopilot)
-    autopilot.get_logger().info("after rclpy_spin")
-    try:
-         rclpy.spin_once(autopilot, executor=autopilot.close_connection(), timeout_sec=10)
-    except:
-        autopilot.get_logger().error("Can not close APU connection.")
+    rclpy.spin(autopilot, executor=autopilot.close_connection())
+    # autopilot.get_logger().info("after rclpy_spin")
+    # try:
+    #      rclpy.spin_once(autopilot, executor=autopilot.close_connection(), timeout_sec=10)
+    # except:
+    #     autopilot.get_logger().error("Can not close APU connection.")
  
     autopilot.destroy_node()
     rclpy.shutdown()
