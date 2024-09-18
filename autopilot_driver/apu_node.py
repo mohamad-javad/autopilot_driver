@@ -414,10 +414,20 @@ def main():
     rclpy.init()
     autopilot = Autopilot()
     rclpy.spin(autopilot)
+    # try:
+    #     autopilot.close_connection()
+    # except:
+    #     autopilot.get_logger().error("Can not close APU connection.")
     try:
-        autopilot.close_connection()
+        autopilot.get_logger().info("Transfer to 'MANUAL' mode before closing connection.")
+        autopilot.request.mode = 8
     except:
-        autopilot.get_logger().error("Can not close APU connection.")
+        autopilot.get_logger().error(">>>>>\tCareful!!! Can't set mode to 'MANUAL' on exit.\t<<<<<")
+        
+        autopilot.create_mpu_msg()
+        autopilot.serial_connection.write(self.mpu_msg)
+        autopilot.serial_connection.close()
+        autopilot.get_logger().info("APU Connection is now closed.")
     autopilot.destroy_node()
     rclpy.shutdown()
 
