@@ -413,7 +413,7 @@ class Autopilot(Node):
 def main():
     rclpy.init()
     autopilot = Autopilot()
-    rclpy.spin(autopilot, executor=autopilot.close_connection())
+    rclpy.spin(autopilot)
     # autopilot.get_logger().info("after rclpy_spin")
     # try:
     #      rclpy.spin_once(autopilot, executor=autopilot.close_connection(), timeout_sec=10)
