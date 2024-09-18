@@ -414,6 +414,7 @@ def main():
     rclpy.init()
     autopilot = Autopilot()
     rclpy.spin(autopilot)
+    autopilot.get_logger().info("after rclpy_spin")
     try:
          rclpy.spin_once(autopilot, executor=autopilot.close_connection(), timeout_sec=10)
     except:
