@@ -415,7 +415,7 @@ def main():
     autopilot = Autopilot()
     rclpy.spin(autopilot)
     try:
-         rclpy.spin_once(node, executor=autopilot.close_connection(), timeout_sec=10)
+         rclpy.spin_once(autopilot, executor=autopilot.close_connection(), timeout_sec=10)
     except:
         autopilot.get_logger().error("Can not close APU connection.")
  
