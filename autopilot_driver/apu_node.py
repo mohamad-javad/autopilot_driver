@@ -424,10 +424,10 @@ def main():
     except:
         autopilot.get_logger().error(">>>>>\tCareful!!! Can't set mode to 'MANUAL' on exit.\t<<<<<")
         
-        autopilot.create_mpu_msg()
-        autopilot.serial_connection.write(self.mpu_msg)
-        autopilot.serial_connection.close()
-        autopilot.get_logger().info("APU Connection is now closed.")
+    autopilot.create_mpu_msg()
+    autopilot.serial_connection.write(self.mpu_msg)
+    autopilot.serial_connection.close()
+    autopilot.get_logger().info("APU Connection is now closed.")
     autopilot.destroy_node()
     rclpy.shutdown()
 
