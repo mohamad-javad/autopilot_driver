@@ -5,7 +5,10 @@ import serial.serialutil
 import binascii
 
 import rclpy
-from rclpy.node import Node
+# from rclpy.node import Node
+import signal
+from rclpy.signals import SignalHandlerOptions
+from rclpy.lifecycle import State, TransitionCallbackReturn, Node
 from sensor_msgs.msg import Imu, NavSatFix
 from std_msgs.msg import String, Float32, Int8, Int32
 from geographic_msgs.msg import GeoPoint
@@ -26,7 +29,7 @@ from autoware_vehicle_msgs.msg import VelocityReport
 
 class Autopilot(Node):
     def __init__(self):
-        super().__init__('Autopilot_Base')
+        super().__init__('autopilot_base')
         self.is_armed = None
         self.is_closed = False
         self.request = None
@@ -40,6 +43,21 @@ class Autopilot(Node):
         self.vfrHdu_msg = None
         self.longitudinal_velocity = 0.0
         self.velocity_sign = 1
+        
+        # set rates
+        self.mav_parm = mavparm.MAVParmDict()
+
+        # self.initialize_connection()
+        self.att_msg = None
+        self.gps_msg: GPSINPUT = None
+        self.mpu_msg: Mpu = None
+        self.is_gps_msg = False
+        self.is_mpu_msg = False
+
+    """
+    Define lifecycle node functions
+    """
+    def on_configure(self, state: State) -> TransitionCallbackReturn:
         self.heading_subscriber = self.create_subscription(Float32,'/sensing/gnss/raymand/heading', self.heading_callback, 10)
         self.velocity_sign_subscriber = self.create_subscription(Int8,'/sensing/gnss/raymand/velocity_sign', self.velocity_sign_callback, 10)
         self.imu_publisher_ = self.create_publisher(Imu, '/autopilot/imu', 10)
@@ -60,23 +78,38 @@ class Autopilot(Node):
             SendMPUMsg, '/autopilot/mpu_srv', self.mpu_msg_responder)
         self.mode_service_ = self.create_service(
             SetMode, '/autopilot/set_mode', self.set_mode_responder)
+        
 
-        # set rates
-        self.mav_parm = mavparm.MAVParmDict()
 
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_activate(self, state:State) -> TransitionCallbackReturn:
+        self.get_logger().info(f"{state.label.upper()} ===> Stabilizing Connection...")
+        self.is_closed = False
         self.initialize_connection()
+        
         # create timers
         self.receiver_timer = self.create_timer(0.001, self.receiver_callback)
         self.vfrHud_pub_timer = self.create_timer(1/50, self.vfrHud_pub_callback)
         self.imu_pub_timer = self.create_timer(1/50, self.imu_pub_callback)
         self.att_pub_timer = self.create_timer(1/50, self.att_pub_callback)
         # self.vel_status_pub_time = self.create_timer(0.05, self.velocity_status_pub_callback)
-        self.att_msg = None
-        self.gps_msg: GPSINPUT = None
-        self.mpu_msg: Mpu = None
-        self.is_gps_msg = False
-        self.is_mpu_msg = False
+        
+        # set signal handler for shutting down driver
+        signal.signal(signal.SIGINT, self.on_shutdown)
 
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_deactivate(self, state:State) -> TransitionCallbackReturn:
+        self.close_connection()
+
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_shutdown(self, state:State, *args) -> TransitionCallbackReturn:
+        self.close_connection()
+
+        return TransitionCallbackReturn.SUCCESS
+    
     def initialize_connection(self):
         while True:
             try:
@@ -123,16 +156,19 @@ class Autopilot(Node):
         self.get_logger().info(f'APU connection is established to port: <{serial_path}>')
 
     def close_connection(self):
-        self.is_closed = True
+        if self.is_closed:
+            return
+        
         try:
             self.get_logger().info("Transfer to 'MANUAL' mode before closing connection.")
             self.request.mode = 8
+            self.create_mpu_msg()
+            self.serial_connection.write(self.mpu_msg)
+            self.serial_connection.close()
+            self.is_closed = True
         except:
             self.get_logger().error(">>>>>\tCareful!!! Can't set mode to 'MANUAL' on exit.\t<<<<<")
         
-        self.create_mpu_msg()
-        self.serial_connection.write(self.mpu_msg)
-        self.serial_connection.close()
         self.get_logger().info("APU Connection is now closed.")
 
     def check_arm(self):
@@ -173,7 +209,6 @@ class Autopilot(Node):
     def receiver_callback(self):
         if self.is_closed:
             return
-        
         try:
             msg = self.serial_connection.recv_msg()
             if msg is not None and msg.get_type() != 'BAD_DATA':
@@ -411,14 +446,9 @@ class Autopilot(Node):
         point.longitude = msg.lng * 1e-7
         self.log_apu_pos_publisher_.publish(point)
 def main():
-    rclpy.init()
+    rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
     autopilot = Autopilot()
     rclpy.spin(autopilot)
-    try:
-        autopilot.close_connection()
-    except:
-        autopilot.get_logger().error("Can not close APU connection.")
-    autopilot.destroy_node()
     rclpy.shutdown()
 
 
